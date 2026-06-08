@@ -1,0 +1,16 @@
+{
+  "_comment": "DeepSpeed pipeline-parallel config for gpt2-xl on 2x T4. train_micro_batch_size_per_gpu and gradient_accumulation_steps are overridden from the CLI (src/train_deepspeed.py builds the effective config at runtime); this file documents the canonical settings. fp16 dynamic loss scaling + DeepSpeed-managed fp32 master weights make convergence robust on Turing (no bf16).",
+  "train_micro_batch_size_per_gpu": 1,
+  "gradient_accumulation_steps": 8,
+  "fp16": {
+    "enabled": true,
+    "loss_scale": 0,
+    "initial_scale_power": 12,
+    "loss_scale_window": 1000,
+    "hysteresis": 2,
+    "min_loss_scale": 1
+  },
+  "gradient_clipping": 1.0,
+  "steps_per_print": 50,
+  "wall_clock_breakdown": false
+}

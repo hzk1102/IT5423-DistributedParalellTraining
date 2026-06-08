@@ -1,0 +1,10 @@
+[project]
+name = "project"
+version = "0.1.0"
+description = "Topic 2: Pipeline Parallelism for LLMs exceeding GPU memory (DeepSpeed PP vs torch.distributed.pipelining vs 1-GPU grad-checkpointing) on 2x T4"
+requires-python = ">=3.12"
+dependencies = [
+    "datasets>=5.0.0",
+    "pypdf>=6.13.1",
+    "transformers>=5.10.2",
+]

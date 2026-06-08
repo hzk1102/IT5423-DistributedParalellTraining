@@ -1,0 +1,14 @@
+# Extra packages to install on a Kaggle "GPU T4 x2" notebook.
+#
+# torch, transformers, datasets, numpy, pandas, matplotlib are ALREADY installed
+# in the Kaggle GPU image -- do NOT reinstall torch (you'll break the CUDA build).
+# Only these two are missing for this project:
+deepspeed>=0.14
+bitsandbytes>=0.43
+#
+# Install in a notebook cell with:
+#   !pip install -q deepspeed bitsandbytes
+#
+# If `import deepspeed` warns about missing ops, that's fine -- pipeline
+# parallelism is pure-python and needs no JIT-compiled CUDA kernels.
+# If bitsandbytes fails to load on your image, use `--optim adafactor` instead.
