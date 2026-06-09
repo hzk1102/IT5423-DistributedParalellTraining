@@ -18,7 +18,7 @@ measured), MFU, and perplexity.
   copy-paste, zero-prior-knowledge walkthrough.
 - **Why each decision was made:** read **[PROJECT_PLAN.md](PROJECT_PLAN.md)** (the
   authoritative design doc).
-- **For Claude Code instances:** see [CLAUDE.md](CLAUDE.md).
+
 
 ## Layout
 
