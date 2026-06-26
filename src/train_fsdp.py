@@ -257,9 +257,23 @@ def main():
 
         optimizer.zero_grad(set_to_none=True)
 
+        # ---- memory breakdown log (chỉ step 1, rank 0) ---------------------- #
+        if step == 0 and rank == 0:
+            mem = torch.cuda.memory_allocated(device) / 1024**3
+            print(f"[mem] after zero_grad (params+optim only): {mem:.2f} GB", flush=True)
+
         # dùng causal_lm_loss từ losses.py — giữ fp16, đồng bộ với train_torchpp.py
         outputs = model(input_ids=input_ids)
+
+        if step == 0 and rank == 0:
+            mem = torch.cuda.memory_allocated(device) / 1024**3
+            print(f"[mem] after forward (params+optim+activations): {mem:.2f} GB", flush=True)
+
         loss = causal_lm_loss(outputs.logits, labels)
+
+        if step == 0 and rank == 0:
+            mem = torch.cuda.memory_allocated(device) / 1024**3
+            print(f"[mem] after loss (params+optim+activations+logits_fp32): {mem:.2f} GB", flush=True)
 
         loss.backward()              # FSDP reduce-scatter grads tự động
 
