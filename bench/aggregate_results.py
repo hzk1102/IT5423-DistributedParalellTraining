@@ -21,11 +21,28 @@ pd.set_option("display.max_columns", 40)
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", default="results/results.csv")
+    ap.add_argument("--model", default="gpt2-xl",
+                    help="keep only this model (drops smoke-test rows); '' = no filter")
+    ap.add_argument("--seq-len", type=int, default=512,
+                    help="keep only this seq_len (drops smoke-test rows); 0 = no filter")
     args = ap.parse_args()
     if not os.path.exists(args.csv):
         raise SystemExit(f"no results at {args.csv} -- run a training script first")
 
     df = pd.read_csv(args.csv)
+    # results.csv is append-only, so smoke-test rows (e.g. gpt2 @ seq256) pile up
+    # alongside the real gpt2-xl sweep. Filter to the primary experiment before
+    # grouping -- otherwise a faster small-model row wins the per-M max().
+    n_all = len(df)
+    if args.model:
+        df = df[df["model"] == args.model]
+    if args.seq_len:
+        df = df[df["seq_len"] == args.seq_len]
+    if len(df) < n_all:
+        print(f"[filter] kept {len(df)}/{n_all} rows (model={args.model or 'any'}, "
+              f"seq_len={args.seq_len or 'any'})")
+    if df.empty:
+        raise SystemExit("no rows left after filtering -- check --model/--seq-len")
     df = df.sort_values("timestamp")
     cols = ["system", "schedule", "num_micro_batches", "global_batch", "seq_len",
             "tokens_per_sec", "peak_mem_gb_max", "bubble_theory", "mfu",

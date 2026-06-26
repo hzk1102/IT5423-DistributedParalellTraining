@@ -28,7 +28,7 @@ import torch.distributed as dist
 
 from data import build_lm_dataset, get_tokenizer, make_dataloader
 from losses import causal_lm_loss
-from metrics import (RunResult, ThroughputMeter, all_reduce_max_gb,
+from metrics import (LossLogger, RunResult, ThroughputMeter, all_reduce_max_gb,
                      bubble_fraction, interleaved_bubble_fraction, log_result,
                      mfu, model_dims, peak_memory_gb, reset_peak_memory)
 from model_split import build_stage_modules
@@ -86,6 +86,7 @@ def main():
     ap.add_argument("--seed", type=int, default=1234)
     ap.add_argument("--max-train-samples", type=int, default=None)
     ap.add_argument("--results-csv", default="results/results.csv")
+    ap.add_argument("--loss-log", default="", help="optional CSV for per-step loss (convergence curves)")
     ap.add_argument("--profile", action="store_true", help="dump a profiler trace for bubble analysis")
     ap.add_argument("--notes", default="")
     args = ap.parse_args()
@@ -207,6 +208,9 @@ def main():
         )
         profiler.start()
 
+    loss_log = LossLogger(args.loss_log if is_last else "", system="torchpp",
+                          schedule=args.schedule, model=args.model,
+                          num_micro_batches=args.num_micro_batches)
     step, last_loss = 0, 0.0
     data_iter = iter(train_loader)
     while step < args.max_steps:
@@ -221,9 +225,12 @@ def main():
         meter.step(n_tokens=global_batch * args.seq_len, n_samples=global_batch)
         if profiler is not None:
             profiler.step()
+        if is_last:
+            loss_log.log(step, last_loss, meter.tokens_per_sec)
         if is_last and (step % 5 == 0 or step == 1):
             print(f"  step {step:4d}/{args.max_steps}  loss={last_loss:.4f}"
                   f"  tok/s={meter.tokens_per_sec:,.0f}", flush=True)
+    loss_log.close()
 
     if profiler is not None:
         profiler.stop()
@@ -241,7 +248,11 @@ def main():
     if kind == "interleaved":
         bub = interleaved_bubble_fraction(world, args.num_micro_batches, v)
     elif kind == "zbv":
-        bub = 0.0  # zero-bubble ideal; compare against measured (profiler)
+        # ZBV's *design target* is ~0 bubble, but on 2x T4 (no NVLink) the split
+        # backward rarely hides all idle time. Report the interleaved lower bound
+        # (v=2) as the theoretical value and let the empirical-bubble plot
+        # (bench/plot_analysis.py) show the real achieved gap -- do NOT log 0%.
+        bub = interleaved_bubble_fraction(world, args.num_micro_batches, 2)
     else:
         bub = bubble_fraction(world, args.num_micro_batches)
 

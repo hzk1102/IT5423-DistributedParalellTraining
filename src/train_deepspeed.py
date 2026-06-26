@@ -24,7 +24,7 @@ import torch
 
 from data import build_lm_dataset, get_tokenizer, make_dataloader
 from losses import causal_lm_loss
-from metrics import (RunResult, ThroughputMeter, all_reduce_max_gb,
+from metrics import (LossLogger, RunResult, ThroughputMeter, all_reduce_max_gb,
                      bubble_fraction, log_result, mfu, model_dims,
                      peak_memory_gb, reset_peak_memory)
 from model_split import build_ordered_layers
@@ -58,6 +58,7 @@ def main():
     ap.add_argument("--max-train-samples", type=int, default=None)
     ap.add_argument("--seed", type=int, default=1234)
     ap.add_argument("--results-csv", default="results/results.csv")
+    ap.add_argument("--loss-log", default="", help="optional CSV for per-step loss (convergence curves)")
     ap.add_argument("--notes", default="")
     ap.add_argument("--local_rank", type=int, default=0)  # injected by the deepspeed launcher
     args = ap.parse_args()
@@ -115,14 +116,20 @@ def main():
               f"partition={args.partition} M={args.num_micro_batches} "
               f"global_batch={global_batch}", flush=True)
 
+    loss_log = LossLogger(args.loss_log if rank == 0 else "", system="deepspeed",
+                          schedule="1f1b", model=args.model,
+                          num_micro_batches=args.num_micro_batches)
     last_loss = 0.0
     for step in range(1, args.max_steps + 1):
         loss = engine.train_batch(data_iter=train_iter)
         last_loss = float(loss.item()) if hasattr(loss, "item") else float(loss)
         meter.step(n_tokens=global_batch * args.seq_len, n_samples=global_batch)
+        if rank == 0:
+            loss_log.log(step, last_loss, meter.tokens_per_sec)
         if rank == 0 and (step % 5 == 0 or step == 1):
             print(f"  step {step:4d}/{args.max_steps}  loss={last_loss:.4f}"
                   f"  tok/s={meter.tokens_per_sec:,.0f}", flush=True)
+    loss_log.close()
 
     # ---- eval perplexity via DeepSpeed pipeline eval ---------------------- #
     eval_ppl = 0.0

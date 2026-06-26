@@ -19,8 +19,9 @@ import torch
 from transformers import AutoModelForCausalLM
 
 from data import build_lm_dataset, get_tokenizer, make_dataloader
-from metrics import (RunResult, ThroughputMeter, count_params, log_result,
-                     mfu, model_dims, peak_memory_gb, reset_peak_memory)
+from metrics import (LossLogger, RunResult, ThroughputMeter, count_params,
+                     log_result, mfu, model_dims, peak_memory_gb,
+                     reset_peak_memory)
 from optim import build_optimizer
 from utils import set_seed
 
@@ -59,6 +60,7 @@ def main():
     ap.add_argument("--max-train-samples", type=int, default=None)
     ap.add_argument("--seed", type=int, default=1234)
     ap.add_argument("--results-csv", default="results/results.csv")
+    ap.add_argument("--loss-log", default="", help="optional CSV for per-step loss (convergence curves)")
     ap.add_argument("--notes", default="")
     args = ap.parse_args()
 
@@ -90,6 +92,9 @@ def main():
     print(f"[singlegpu] {args.model} params={n_params/1e9:.2f}B  global_batch={global_batch}"
           f"  grad_ckpt={args.grad_checkpointing}  optim={args.optim}", flush=True)
 
+    loss_log = LossLogger(args.loss_log, system="singlegpu",
+                          schedule="grad_ckpt" if args.grad_checkpointing else "dense",
+                          model=args.model, num_micro_batches=args.num_micro_batches)
     step, last_loss = 0, 0.0
     data_iter = iter(train_loader)
     while step < args.max_steps:
@@ -111,9 +116,11 @@ def main():
         step += 1
         last_loss = step_loss / args.num_micro_batches
         meter.step(n_tokens=global_batch * args.seq_len, n_samples=global_batch)
+        loss_log.log(step, last_loss, meter.tokens_per_sec)
         if step % 5 == 0 or step == 1:
             print(f"  step {step:4d}/{args.max_steps}  loss={last_loss:.4f}"
                   f"  tok/s={meter.tokens_per_sec:,.0f}", flush=True)
+    loss_log.close()
 
     peak0 = peak_memory_gb(device)
     eval_ppl = 0.0

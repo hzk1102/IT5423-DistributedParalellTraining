@@ -196,3 +196,41 @@ def log_result(result: RunResult, csv_path: str = "results/results.csv") -> None
     tag = f"{result.system}_{result.schedule or 'na'}_M{result.num_micro_batches}_{result.timestamp.replace(':', '').replace(' ', '_')}"
     with open(os.path.join(json_dir, f"{tag}.json"), "w", encoding="utf-8") as f:
         json.dump(asdict(result), f, indent=2)
+
+
+# --------------------------------------------------------------------------- #
+# Per-step loss logging (for convergence-curve figures)                       #
+# --------------------------------------------------------------------------- #
+class LossLogger:
+    """Append (system, schedule, model, M, step, loss, tok/s) rows to a CSV so
+    the report can plot loss-vs-step convergence curves across the three systems.
+
+    A no-op when `path` is falsy, so trainers can always construct one and call
+    `.log(...)` unconditionally. Only the rank that owns the loss (rank 0 /
+    last pipeline stage) should hold a logger; others pass path=None.
+    """
+
+    def __init__(self, path, system="", schedule="", model="", num_micro_batches=0):
+        self.path = path
+        self._f = None
+        if not path:
+            return
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        new = not os.path.exists(path)
+        self._f = open(path, "a", newline="", encoding="utf-8")
+        self._w = csv.writer(self._f)
+        if new:
+            self._w.writerow(["system", "schedule", "model", "num_micro_batches",
+                              "step", "loss", "tokens_per_sec"])
+        self._meta = [system, schedule, model, num_micro_batches]
+
+    def log(self, step: int, loss: float, tokens_per_sec: float = 0.0):
+        if self._f is None:
+            return
+        self._w.writerow(self._meta + [step, f"{loss:.6f}", f"{tokens_per_sec:.1f}"])
+        self._f.flush()
+
+    def close(self):
+        if self._f is not None:
+            self._f.close()
+            self._f = None
