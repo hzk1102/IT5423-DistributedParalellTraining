@@ -172,10 +172,10 @@ def build_ordered_layers(
     attention_mask — the most predictable behaviour for a manual decomposition.
     Try `"sdpa"` to save activation memory once `check_split.py` passes.
     """
-    torch_dtype = getattr(torch, dtype)
+    resolved_dtype = getattr(torch, dtype)
     config = AutoConfig.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(
-        model_name, torch_dtype=torch_dtype, attn_implementation=attn_implementation
+        model_name, dtype=resolved_dtype, attn_implementation=attn_implementation
     )
     model.eval()
     mt = config.model_type

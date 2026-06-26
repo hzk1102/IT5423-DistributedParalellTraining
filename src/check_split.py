@@ -39,7 +39,7 @@ def main():
     torch.manual_seed(0)
     # fp32 + eager so the comparison isn't masked by fp16 rounding.
     ref = AutoModelForCausalLM.from_pretrained(
-        args.model, torch_dtype=torch.float32, attn_implementation="eager"
+        args.model, dtype=torch.float32, attn_implementation="eager"
     ).eval()
     vocab = ref.config.vocab_size
     input_ids = torch.randint(0, vocab, (args.batch, args.seq_len))

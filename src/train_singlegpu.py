@@ -76,7 +76,7 @@ def main():
     train_loader = make_dataloader(train_ds, global_batch, shuffle=True, seed=args.seed)
 
     model = AutoModelForCausalLM.from_pretrained(
-        args.model, torch_dtype=torch.float16, attn_implementation=args.attn
+        args.model, dtype=torch.float16, attn_implementation=args.attn
     ).to(device)
     model.config.use_cache = False
     if args.grad_checkpointing:
