@@ -86,6 +86,17 @@ def plot_bubble_empirical(df, out_dir):
         print("[skip] bubble_empirical: need >=2 M points per schedule")
 
 
+def _smooth(s, window=10):
+    """Rolling mean so the noisy per-step loss reads as a trend, not a scribble."""
+    return s.rolling(window=window, min_periods=1).mean()
+
+
+def _nice_label(system, schedule):
+    sysname = {"singlegpu": "1 GPU", "torchpp": "torch PP (2 GPU)",
+               "deepspeed": "DeepSpeed (2 GPU)"}.get(str(system), str(system))
+    return f"{sysname} / {schedule}"
+
+
 def plot_convergence(loss_csv, out_dir):
     if not os.path.exists(loss_csv):
         print(f"[skip] convergence: {loss_csv} not found "
@@ -100,12 +111,53 @@ def plot_convergence(loss_csv, out_dir):
     keys = [k for k in keys if k in df.columns]
     for vals, g in df.groupby(keys):
         g = g.sort_values("step")
-        label = "/".join(str(v) for v in (vals if isinstance(vals, tuple) else (vals,)))
-        ax.plot(g["step"], g["loss"], label=label, alpha=0.9)
+        vals = vals if isinstance(vals, tuple) else (vals,)
+        label = _nice_label(vals[0], vals[1] if len(vals) > 1 else "")
+        line, = ax.plot(g["step"], _smooth(g["loss"]), label=label, lw=2)
+        ax.plot(g["step"], g["loss"], color=line.get_color(), alpha=0.15)
     ax.set_xlabel("optimizer step"); ax.set_ylabel("training loss")
-    ax.set_title("Convergence: training loss vs step")
+    ax.set_title("Convergence: training loss vs optimizer step")
     ax.grid(True, alpha=0.3); ax.legend(fontsize=8)
     _save(fig, out_dir, "convergence.png")
+
+
+def plot_convergence_vs_tokens(loss_csv, out_dir, seq_len=512, micro_batch_size=1):
+    """Fair convergence view: loss vs the number of tokens actually processed.
+
+    The single-GPU run had a batching bug (DataLoader batch = global_batch, then
+    accumulated num_micro_batches of them), so per optimizer step it consumed
+    num_micro_batches x more tokens than the 2-GPU pipeline runs. Plotting against
+    *tokens seen* (not steps) puts all three systems on a common x-axis, removing
+    that unfair advantage from the picture.
+    """
+    if not os.path.exists(loss_csv):
+        print(f"[skip] convergence_vs_tokens: {loss_csv} not found")
+        return
+    df = pd.read_csv(loss_csv)
+    if df.empty:
+        print("[skip] convergence_vs_tokens: loss CSV empty")
+        return
+    fig, ax = plt.subplots(figsize=(7.5, 5))
+    keys = [k for k in ["system", "schedule", "model", "num_micro_batches"] if k in df.columns]
+    for vals, g in df.groupby(keys):
+        g = g.sort_values("step")
+        vals = vals if isinstance(vals, tuple) else (vals,)
+        system = str(vals[0]); schedule = vals[1] if len(vals) > 1 else ""
+        nmb = int(g["num_micro_batches"].iloc[0]) if "num_micro_batches" in g else 1
+        if system == "singlegpu":
+            # bug: each of nmb accumulation steps pulled a batch of (nmb*mbs)
+            tokens_per_step = nmb * (nmb * micro_batch_size) * seq_len
+            label = _nice_label(system, schedule) + f"  (saw {nmb}x tokens)"
+        else:
+            tokens_per_step = (nmb * micro_batch_size) * seq_len
+            label = _nice_label(system, schedule)
+        tokens_m = g["step"] * tokens_per_step / 1e6
+        line, = ax.plot(tokens_m, _smooth(g["loss"]), label=label, lw=2)
+        ax.plot(tokens_m, g["loss"], color=line.get_color(), alpha=0.15)
+    ax.set_xlabel("tokens processed (millions)"); ax.set_ylabel("training loss")
+    ax.set_title("Convergence: training loss vs tokens seen (fair across batch sizes)")
+    ax.grid(True, alpha=0.3); ax.legend(fontsize=8)
+    _save(fig, out_dir, "convergence_vs_tokens.png")
 
 
 def main():
@@ -127,6 +179,7 @@ def main():
         print(f"[skip] bubble_empirical: {args.csv} not found")
 
     plot_convergence(args.loss_csv, args.out)
+    plot_convergence_vs_tokens(args.loss_csv, args.out, seq_len=args.seq_len)
     print("\nanalysis figures in", args.out)
 
 

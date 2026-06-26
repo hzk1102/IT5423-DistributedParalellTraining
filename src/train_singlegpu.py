@@ -73,7 +73,13 @@ def main():
     train_ds = build_lm_dataset(args.model, args.dataset_config, "train",
                                 args.seq_len, tokenizer, max_samples=args.max_train_samples)
     global_batch = args.micro_batch_size * args.num_micro_batches
-    train_loader = make_dataloader(train_ds, global_batch, shuffle=True, seed=args.seed)
+    # The DataLoader must yield MICRO-batches: we accumulate `num_micro_batches`
+    # of them per optimizer step (loop below), so batch_size = micro_batch_size
+    # gives an effective global batch of micro_batch_size * num_micro_batches,
+    # matching train_torchpp.py / train_deepspeed.py. (Using global_batch here was
+    # a bug: it made the effective batch num_micro_batches x too large and caused
+    # the throughput meter to under-count tokens by the same factor.)
+    train_loader = make_dataloader(train_ds, args.micro_batch_size, shuffle=True, seed=args.seed)
 
     model = AutoModelForCausalLM.from_pretrained(
         args.model, dtype=torch.float16, attn_implementation=args.attn

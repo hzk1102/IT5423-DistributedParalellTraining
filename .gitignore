@@ -3,3 +3,5 @@
 *.md
 .python-version
 *.zip
+# the written report is a deliverable, kept out of git (REPORT.md is covered by *.md)
+*.docx
