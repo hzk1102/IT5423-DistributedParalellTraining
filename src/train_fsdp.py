@@ -41,6 +41,7 @@ from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
 from torch.utils.data import DataLoader, DistributedSampler
 
 from data import build_lm_dataset, get_tokenizer, collate
+from losses import causal_lm_loss
 from metrics import (
     LossLogger, RunResult, ThroughputMeter,
     all_reduce_max_gb, log_result, mfu, model_dims,
@@ -256,18 +257,11 @@ def main():
 
         optimizer.zero_grad(set_to_none=True)
 
-        # FSDP forward: mỗi rank chạy full forward trên shard của mình,
-        # FSDP all-gather params khi cần
-        outputs = model(input_ids=input_ids, labels=labels)
-        loss = outputs.loss          # CrossEntropyLoss từ HF (fp32)
+        # dùng causal_lm_loss từ losses.py — giữ fp16, đồng bộ với train_torchpp.py
+        outputs = model(input_ids=input_ids)
+        loss = causal_lm_loss(outputs.logits, labels)
 
         loss.backward()              # FSDP reduce-scatter grads tự động
-
-        # Clip gradient (optional nhưng tốt cho stability)
-        if shard_strategy != ShardingStrategy.NO_SHARD:
-            model.clip_grad_norm_(1.0)
-        else:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
 
         optimizer.step()
 
