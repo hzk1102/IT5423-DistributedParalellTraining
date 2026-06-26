@@ -51,6 +51,11 @@ def plot_bubble(df, out_dir):
         b = sub.drop_duplicates("num_micro_batches")
         ax.plot(b["num_micro_batches"], b["bubble_theory"] * 100, "k--o",
                 label="theoretical bubble (P=2)")
+    # FSDP/DP không có pipeline bubble → đánh dấu ở 0%
+    fsdp = df[df.system == "fsdp"]
+    if not fsdp.empty:
+        ax.axhline(0, color="steelblue", ls="--", lw=1.2,
+                   label="FSDP (Data Parallel) — bubble = 0%")
     ax.set_xlabel("micro-batches M"); ax.set_ylabel("bubble fraction (%)")
     ax.set_title("Pipeline bubble vs M  [ (P-1)/(M+P-1) ]")
     ax.set_xscale("log", base=2); ax.grid(True, alpha=0.3); ax.legend()
@@ -82,6 +87,63 @@ def plot_schedule_ladder(df, out_dir):
     ax.set_xlabel("best tokens/sec"); ax.set_title("Schedule ladder (torch.pipelining)")
     ax.grid(True, axis="x", alpha=0.3)
     _save(fig, out_dir, "schedule_ladder.png")
+
+
+def plot_dp_vs_pp(df, out_dir):
+    """So sánh trực tiếp FSDP (Data Parallel) vs PP schedules: throughput và memory."""
+    # Lấy best tok/s và max memory cho mỗi (system, schedule)
+    grp = df.groupby(["system", "schedule"]).agg(
+        tok_s=("tokens_per_sec", "max"),
+        mem=("peak_mem_gb_max", "max"),
+    ).reset_index()
+    if grp.empty:
+        return
+
+    # Label hiển thị: fsdp/fsdp_full → "FSDP\nZeRO-3", torchpp/1f1b → "TorchPP\n1F1B", ...
+    label_map = {
+        "fsdp_full": "FSDP\n(ZeRO-3)",
+        "fsdp_grad": "FSDP\n(ZeRO-2)",
+        "fsdp_no":   "FSDP\n(DDP)",
+        "1f1b":            "TorchPP\n1F1B",
+        "gpipe":           "TorchPP\nGPipe",
+        "interleaved_1f1b":"TorchPP\nInterleaved",
+        "interleaved_zb":  "TorchPP\nZero-Bubble",
+        "zbv":             "TorchPP\nZBV",
+    }
+    color_map = {
+        "fsdp":      "steelblue",
+        "torchpp":   "darkorange",
+        "deepspeed": "forestgreen",
+        "singlegpu": "gray",
+    }
+
+    grp["label"] = grp["schedule"].map(label_map).fillna(grp["schedule"])
+    grp["color"] = grp["system"].map(color_map).fillna("purple")
+    grp = grp.sort_values(["system", "tok_s"])
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+
+    # --- throughput ---
+    bars0 = axes[0].barh(grp["label"], grp["tok_s"], color=grp["color"])
+    axes[0].set_xlabel("tokens / sec")
+    axes[0].set_title("Throughput: Data Parallel vs Pipeline Parallel")
+    axes[0].grid(True, axis="x", alpha=0.3)
+
+    # --- peak memory ---
+    axes[1].barh(grp["label"], grp["mem"], color=grp["color"])
+    axes[1].axvline(15, color="red", ls=":", lw=1.2, label="T4 limit (15 GB)")
+    axes[1].set_xlabel("peak VRAM / GPU (GB)")
+    axes[1].set_title("Peak Memory: Data Parallel vs Pipeline Parallel")
+    axes[1].grid(True, axis="x", alpha=0.3)
+    axes[1].legend(fontsize=8)
+
+    # legend cho màu system
+    from matplotlib.patches import Patch
+    legend_els = [Patch(color=c, label=s) for s, c in color_map.items()
+                  if s in grp["system"].values]
+    axes[0].legend(handles=legend_els, fontsize=8, loc="lower right")
+
+    _save(fig, out_dir, "dp_vs_pp_comparison.png")
 
 
 def plot_1gpu_vs_2gpu(df, out_dir):
@@ -127,6 +189,7 @@ def main():
     plot_mem_vs_m(df, args.out)
     plot_schedule_ladder(df, args.out)
     plot_1gpu_vs_2gpu(df, args.out)
+    plot_dp_vs_pp(df, args.out)
     print("\nall figures in", args.out)
 
 

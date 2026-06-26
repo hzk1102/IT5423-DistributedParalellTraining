@@ -53,5 +53,14 @@ for M in 1 2 4 8 16; do
       --seq-len "$SEQ" --max-steps "$STEPS"
 done
 
+# (5) FSDP Data Parallelism sweep (ZeRO-3 - full / ZeRO-2 - grad / DDP baseline - no)
+# dùng cùng MBS và num-micro-batches=8 như PP runs để so sánh công bằng, chi chay grad vi kha thi nhat
+for SHARD in grad; do
+  run torchrun --standalone --nproc_per_node=2 src/train_fsdp.py \
+      --model "$MODEL" --shard-strategy "$SHARD" \
+      --micro-batch-size "$MBS" --num-micro-batches 8 \
+      --seq-len "$SEQ" --max-steps "$STEPS"
+done
+
 echo; echo "=== sweep done -> results/results.csv ==="
 echo "Now run:  python bench/aggregate_results.py  &&  python bench/plots.py"
