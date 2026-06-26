@@ -97,7 +97,7 @@ done
 run env CUDA_VISIBLE_DEVICES=0 python src/train_singlegpu.py --model "$MODEL" \
     --grad-checkpointing --optim adamw8bit --micro-batch-size "$MBS" \
     --num-micro-batches 8 --seq-len "$SEQ" --max-steps "$CONV_STEPS" \
-    --loss-log "$LOSSLOG" --notes "convergence"
+    --loss-scale 1024 --loss-log "$LOSSLOG" --notes "convergence"
 
 run torchrun --standalone --nproc_per_node=2 src/train_torchpp.py --model "$MODEL" \
     --schedule 1f1b --num-micro-batches 8 --micro-batch-size "$MBS" \

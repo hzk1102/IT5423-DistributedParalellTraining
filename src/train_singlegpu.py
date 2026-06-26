@@ -55,6 +55,8 @@ def main():
     ap.add_argument("--optim", default="adamw8bit", choices=["adamw", "adamw8bit", "adafactor"])
     ap.add_argument("--attn", default="sdpa", choices=["sdpa", "eager"])
     ap.add_argument("--grad-checkpointing", action="store_true")
+    ap.add_argument("--loss-scale", type=float, default=1.0,
+                    help="static fp16 loss scale (convergence runs); 1.0 = off")
     ap.add_argument("--eval", action="store_true")
     ap.add_argument("--eval-config", default=None, help="defaults to --dataset-config")
     ap.add_argument("--max-train-samples", type=int, default=None)
@@ -82,7 +84,10 @@ def main():
     model.train()
 
     optimizer = build_optimizer(model.parameters(), args.optim, args.lr)
-    scaler = torch.cuda.amp.GradScaler()
+    # The model is fully fp16, so torch's GradScaler (which assumes fp32 master
+    # weights) refuses to unscale the fp16 grads. Use the same plain-fp16 +
+    # optional static loss scaling path as train_torchpp.py instead.
+    scale = args.loss_scale
 
     n_params = count_params(model)
     n_layer, n_head, head_dim = model_dims(model.config)
@@ -108,11 +113,14 @@ def main():
                 input_ids, labels = next(data_iter)
             input_ids, labels = input_ids.to(device), labels.to(device)
             out = model(input_ids=input_ids, labels=labels)
-            loss = out.loss / args.num_micro_batches
-            scaler.scale(loss).backward()
+            loss = out.loss / args.num_micro_batches * scale
+            loss.backward()
             step_loss += out.loss.item()
-        scaler.step(optimizer)
-        scaler.update()
+        if scale != 1.0:
+            for p in model.parameters():
+                if p.grad is not None:
+                    p.grad.div_(scale)
+        optimizer.step()
         step += 1
         last_loss = step_loss / args.num_micro_batches
         meter.step(n_tokens=global_batch * args.seq_len, n_samples=global_batch)
