@@ -20,6 +20,16 @@ run() { echo; echo ">>> $*"; "$@" || echo "!!! FAILED (continuing): $*"; }
 # (0) sanity: prove the split is faithful before trusting pipeline numbers
 run python src/check_split.py --model "$MODEL" --num-stages 2
 
+# (5) FSDP Data Parallelism sweep (ZeRO-3 - full / ZeRO-2 - grad / DDP baseline - no) 
+# run first to test
+for SHARD in grad; do
+  run torchrun --standalone --nproc_per_node=2 src/train_fsdp.py \
+      --model "$MODEL" --shard-strategy "$SHARD" \
+      --micro-batch-size "$MBS" --num-micro-batches 8 \
+      --seq-len "$SEQ" --max-steps "$STEPS" --grad-checkpointing
+done
+
+
 # (1) single-GPU grad-checkpointing baseline (deliverable 4 control)
 run env CUDA_VISIBLE_DEVICES=0 python src/train_singlegpu.py --model "$MODEL" \
     --grad-checkpointing --optim adamw8bit --micro-batch-size "$MBS" \
@@ -50,15 +60,6 @@ done
 for M in 1 2 4 8 16; do
   run deepspeed --num_gpus 2 src/train_deepspeed.py --model "$MODEL" \
       --num-micro-batches "$M" --micro-batch-size "$MBS" \
-      --seq-len "$SEQ" --max-steps "$STEPS"
-done
-
-# (5) FSDP Data Parallelism sweep (ZeRO-3 - full / ZeRO-2 - grad / DDP baseline - no)
-# dùng cùng MBS và num-micro-batches=8 như PP runs để so sánh công bằng, chi chay grad vi kha thi nhat
-for SHARD in grad; do
-  run torchrun --standalone --nproc_per_node=2 src/train_fsdp.py \
-      --model "$MODEL" --shard-strategy "$SHARD" \
-      --micro-batch-size "$MBS" --num-micro-batches 8 \
       --seq-len "$SEQ" --max-steps "$STEPS"
 done
 
