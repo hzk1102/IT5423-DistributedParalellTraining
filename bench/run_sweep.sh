@@ -29,42 +29,43 @@ run python src/check_split.py --model "$MODEL" --num-stages 2
 #       --seq-len "$SEQ" --max-steps "$STEPS" --grad-checkpointing
 # done
 
-for M in 1 2 4 8 16; do
+for M in 5 6 7; do
   run torchrun --standalone --nproc_per_node=2 src/train_fsdp.py \
       --model "$MODEL" --shard-strategy "grad" \
       --micro-batch-size "$MBS" --num-micro-batches "$M" \
-      --seq-len "$SEQ" --max-steps "$STEPS" --grad-checkpointing
+      --seq-len "$SEQ" --max-steps "$STEPS"
 done
 
-
-# (1) single-GPU grad-checkpointing baseline (deliverable 4 control)
-run env CUDA_VISIBLE_DEVICES=0 python src/train_singlegpu.py --model "$MODEL" \
-    --grad-checkpointing --optim adamw8bit --micro-batch-size "$MBS" \
-    --num-micro-batches 8 --seq-len "$SEQ" --max-steps "$STEPS" --eval
+# # (1) single-GPU grad-checkpointing baseline (deliverable 4 control)
+# run env CUDA_VISIBLE_DEVICES=0 python src/train_singlegpu.py --model "$MODEL" \
+#     --grad-checkpointing --optim adamw8bit --micro-batch-size "$MBS" \
+#     --num-micro-batches 8 --seq-len "$SEQ" --max-steps "$STEPS" --eval
 
 # (2) micro-batch sweep on torch.pipelining 1F1B (core of deliverable 3)
-for M in 1 2 4 8 16; do
+for M in 32 48 64; do
   run torchrun --standalone --nproc_per_node=2 src/train_torchpp.py --model "$MODEL" \
       --schedule 1f1b --num-micro-batches "$M" --micro-batch-size "$MBS" \
       --seq-len "$SEQ" --max-steps "$STEPS"
 done
 
 # (2b) GPipe for the same M (shows 1F1B==GPipe bubble but lower memory)
-for M in 1 2 4 8; do
+for M in 6 8; do
   run torchrun --standalone --nproc_per_node=2 src/train_torchpp.py --model "$MODEL" \
       --schedule gpipe --num-micro-batches "$M" --micro-batch-size "$MBS" \
       --seq-len "$SEQ" --max-steps "$STEPS"
 done
 
-# (3) modern schedule ladder at fixed M=8 (zero-bubble needs torch>=2.6)
-for S in interleaved_1f1b interleaved_zb zbv; do
-  run torchrun --standalone --nproc_per_node=2 src/train_torchpp.py --model "$MODEL" \
-      --schedule "$S" --num-micro-batches 8 --micro-batch-size "$MBS" \
-      --seq-len "$SEQ" --max-steps "$STEPS"
+# (3) modern schedule ladder at fixed M= (zero-bubble needs torch>=2.6)
+for M in 12 16; do
+  for S in interleaved_1f1b interleaved_zb zbv; do
+    run torchrun --standalone --nproc_per_node=2 src/train_torchpp.py --model "$MODEL" \
+        --schedule "$S" --num-micro-batches "$M" --micro-batch-size "$MBS" \
+        --seq-len "$SEQ" --max-steps "$STEPS"
+  done
 done
 
 # (4) DeepSpeed PP micro-batch sweep (deliverable 2 framework comparison)
-for M in 1 2 4 8 16; do
+for M in 24 32 40; do
   run deepspeed --num_gpus 2 src/train_deepspeed.py --model "$MODEL" \
       --num-micro-batches "$M" --micro-batch-size "$MBS" \
       --seq-len "$SEQ" --max-steps "$STEPS"
