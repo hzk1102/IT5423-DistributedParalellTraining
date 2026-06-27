@@ -29,7 +29,7 @@ run python src/check_split.py --model "$MODEL" --num-stages 2
 #       --seq-len "$SEQ" --max-steps "$STEPS" --grad-checkpointing
 # done
 
-for M in 5 6 7; do
+for M in 3 4 5 6; do
   run torchrun --standalone --nproc_per_node=2 src/train_fsdp.py \
       --model "$MODEL" --shard-strategy "grad" \
       --micro-batch-size "$MBS" --num-micro-batches "$M" \
@@ -42,7 +42,7 @@ done
 #     --num-micro-batches 8 --seq-len "$SEQ" --max-steps "$STEPS" --eval
 
 # (2) micro-batch sweep on torch.pipelining 1F1B (core of deliverable 3)
-for M in 32 48 64; do
+for M in 16 32; do
   run torchrun --standalone --nproc_per_node=2 src/train_torchpp.py --model "$MODEL" \
       --schedule 1f1b --num-micro-batches "$M" --micro-batch-size "$MBS" \
       --seq-len "$SEQ" --max-steps "$STEPS"
@@ -65,7 +65,7 @@ for M in 12 16; do
 done
 
 # (4) DeepSpeed PP micro-batch sweep (deliverable 2 framework comparison)
-for M in 24 32 40; do
+for M in 24 32; do
   run deepspeed --num_gpus 2 src/train_deepspeed.py --model "$MODEL" \
       --num-micro-batches "$M" --micro-batch-size "$MBS" \
       --seq-len "$SEQ" --max-steps "$STEPS"
