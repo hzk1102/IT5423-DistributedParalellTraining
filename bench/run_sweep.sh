@@ -22,10 +22,17 @@ run python src/check_split.py --model "$MODEL" --num-stages 2
 
 # (5) FSDP Data Parallelism sweep (ZeRO-3 - full / ZeRO-2 - grad / DDP baseline - no) 
 # run first to test
-for SHARD in grad; do
+# for SHARD in grad; do
+#   run torchrun --standalone --nproc_per_node=2 src/train_fsdp.py \
+#       --model "$MODEL" --shard-strategy "$SHARD" \
+#       --micro-batch-size "$MBS" --num-micro-batches 8 \
+#       --seq-len "$SEQ" --max-steps "$STEPS" --grad-checkpointing
+# done
+
+for M in 1 2 4 8 16; do
   run torchrun --standalone --nproc_per_node=2 src/train_fsdp.py \
-      --model "$MODEL" --shard-strategy "$SHARD" \
-      --micro-batch-size "$MBS" --num-micro-batches 8 \
+      --model "$MODEL" --shard-strategy "grad" \
+      --micro-batch-size "$MBS" --num-micro-batches "$M" \
       --seq-len "$SEQ" --max-steps "$STEPS" --grad-checkpointing
 done
 
