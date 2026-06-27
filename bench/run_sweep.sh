@@ -33,7 +33,7 @@ for M in 3 4 5 6; do
   run torchrun --standalone --nproc_per_node=2 src/train_fsdp.py \
       --model "$MODEL" --shard-strategy "grad" \
       --micro-batch-size "$MBS" --num-micro-batches "$M" \
-      --seq-len "$SEQ" --max-steps "$STEPS"
+      --seq-len "$SEQ" --max-steps "$STEPS" --grad-checkpointing
 done
 
 # # (1) single-GPU grad-checkpointing baseline (deliverable 4 control)
